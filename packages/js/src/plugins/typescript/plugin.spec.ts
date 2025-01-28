@@ -1919,7 +1919,19 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
         'libs/my-lib/tsconfig.json': `{}`,
         'libs/my-lib/tsconfig.lib.json': `{"compilerOptions": {"outDir": "dist"}}`,
         'libs/my-lib/tsconfig.build.json': `{}`,
-        'libs/my-lib/package.json': `{"main": "dist/index.js"}`,
+        'libs/my-lib/package.json': JSON.stringify({
+          name: 'my-lib',
+          main: 'dist/index.js',
+          types: 'dist/index.d.ts',
+          exports: {
+            '.': {
+              types: './dist/index.d.ts',
+              import: './dist/index.js',
+              default: './dist/index.js',
+            },
+            './package.json': './package.json',
+          },
+        }),
       });
       expect(
         await invokeCreateNodesOnMatchingFiles(context, {
@@ -1970,6 +1982,17 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
                   ],
                   "syncGenerators": [
                     "@nx/js:typescript-sync",
+                  ],
+                },
+                "build-deps": {
+                  "dependsOn": [
+                    "^build",
+                  ],
+                },
+                "watch-deps": {
+                  "command": "npx nx watch --projects my-lib --includeDependentProjects -- npx nx build-deps my-lib",
+                  "dependsOn": [
+                    "build-deps",
                   ],
                 },
               },
@@ -2905,7 +2928,6 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
                     },
                     "outputs": [
                       "{workspaceRoot}/dist/libs/my-lib",
-                      "{workspaceRoot}/dist/libs/*.tsbuildinfo",
                     ],
                     "syncGenerators": [
                       "@nx/js:typescript-sync",
@@ -3066,7 +3088,6 @@ describe(`Plugin: ${PLUGIN_NAME}`, () => {
                       "{workspaceRoot}/dist/libs/my-lib/lib.d.ts.map",
                       "{workspaceRoot}/dist/libs/my-lib/lib.tsbuildinfo",
                       "{workspaceRoot}/dist/libs/my-lib/other",
-                      "{workspaceRoot}/dist/libs/my-lib/*.tsbuildinfo",
                     ],
                     "syncGenerators": [
                       "@nx/js:typescript-sync",

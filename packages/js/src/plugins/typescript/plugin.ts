@@ -35,6 +35,7 @@ import { getLockFileName } from 'nx/src/plugins/js/lock-file/lock-file';
 import { workspaceDataDirectory } from 'nx/src/utils/cache-directory';
 import type { ParsedCommandLine } from 'typescript';
 import { readTsConfig } from '../../utils/typescript/ts-config';
+import { addBuildAndWatchDepsTargets } from './util';
 
 export interface TscPluginOptions {
   typecheck?:
@@ -47,6 +48,8 @@ export interface TscPluginOptions {
     | {
         targetName?: string;
         configName?: string;
+        buildDepsName?: string;
+        watchDepsName?: string;
       };
 }
 
@@ -61,6 +64,8 @@ interface NormalizedPluginOptions {
     | {
         targetName: string;
         configName: string;
+        buildDepsName?: string;
+        watchDepsName?: string;
       };
 }
 
@@ -373,6 +378,17 @@ function buildTscTargets(
         },
       },
     };
+
+    addBuildAndWatchDepsTargets(
+      context.workspaceRoot,
+      projectRoot,
+      targets,
+      {
+        buildDepsTargetName: options.build.buildDepsName,
+        watchDepsTargetName: options.build.watchDepsName,
+      },
+      pmc
+    );
   }
 
   return { targets };
@@ -633,18 +649,17 @@ function getOutputs(
  * @returns `true` if the package has a valid build configuration; otherwise, `false`.
  */
 function isValidPackageJsonBuildConfig(
-  tsConfig,
+  tsConfig: ParsedCommandLine,
   workspaceRoot: string,
   projectRoot: string
 ): boolean {
-  if (!existsSync(joinPathFragments(projectRoot, 'package.json'))) {
+  const packageJsonPath = join(workspaceRoot, projectRoot, 'package.json');
+  if (!existsSync(packageJsonPath)) {
     // If the package.json file does not exist.
     // Assume it's valid because it would be using `project.json` instead.
     return true;
   }
-  const packageJson = readJsonFile(
-    joinPathFragments(projectRoot, 'package.json')
-  );
+  const packageJson = readJsonFile(packageJsonPath);
 
   const outDir = tsConfig.options.outFile
     ? dirname(tsConfig.options.outFile)
@@ -691,10 +706,9 @@ function isValidPackageJsonBuildConfig(
   if (exports) {
     if (typeof exports === 'string') {
       return !isPathSourceFile(exports);
-    } else if (typeof exports === 'object' && '.' in exports) {
-      if (containsInvalidPath(exports['.'])) {
-        return false;
-      }
+    }
+    if (typeof exports === 'object' && '.' in exports) {
+      return !containsInvalidPath(exports['.']);
     }
 
     // Check other exports if `.` is not defined or valid.
@@ -723,9 +737,16 @@ function pathToInputOrOutput(
   workspaceRoot: string,
   projectRoot: string
 ): string {
-  const pathRelativeToProjectRoot = normalizePath(relative(projectRoot, path));
+  const fullProjectRoot = resolve(workspaceRoot, projectRoot);
+  const fullPath = resolve(workspaceRoot, path);
+  const pathRelativeToProjectRoot = normalizePath(
+    relative(fullProjectRoot, fullPath)
+  );
   if (pathRelativeToProjectRoot.startsWith('..')) {
-    return joinPathFragments('{workspaceRoot}', relative(workspaceRoot, path));
+    return joinPathFragments(
+      '{workspaceRoot}',
+      relative(workspaceRoot, fullPath)
+    );
   }
 
   return joinPathFragments('{projectRoot}', pathRelativeToProjectRoot);
@@ -970,6 +991,8 @@ function normalizePluginOptions(
   let build: NormalizedPluginOptions['build'] = {
     targetName: defaultBuildTargetName,
     configName: defaultBuildConfigName,
+    buildDepsName: 'build-deps',
+    watchDepsName: 'watch-deps',
   };
   // Build target is not enabled by default
   if (!pluginOptions.build) {
@@ -978,6 +1001,8 @@ function normalizePluginOptions(
     build = {
       targetName: pluginOptions.build.targetName ?? defaultBuildTargetName,
       configName: pluginOptions.build.configName ?? defaultBuildConfigName,
+      buildDepsName: pluginOptions.build.buildDepsName ?? 'build-deps',
+      watchDepsName: pluginOptions.build.watchDepsName ?? 'watch-deps',
     };
   }
 
