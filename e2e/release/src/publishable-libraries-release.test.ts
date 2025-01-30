@@ -43,4 +43,13 @@ describe('publishable libraries release', () => {
     const versionOutput = runCLI(`release patch`);
     expect(versionOutput).toContain('Executing pre-version command');
   });
+
+  it('should be able release react native publishable libraries', async () => {
+    const reactNativeLib = uniq('react-native-lib');
+    runCLI(
+      `generate @nx/react:lib ${reactNativeLib} --publishable --importPath=@proj/${reactNativeLib}`
+    );
+    const versionOutput = runCLI(`release patch`);
+    expect(versionOutput).toContain('Executing pre-version command');
+  });
 });
