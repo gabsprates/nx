@@ -52,4 +52,13 @@ describe('publishable libraries release', () => {
     const versionOutput = runCLI(`release patch`);
     expect(versionOutput).toContain('Executing pre-version command');
   });
+
+  it('should be able release expo publishable libraries', async () => {
+    const expoLib = uniq('expo-lib');
+    runCLI(
+      `generate @nx/expo:lib ${expoLib} --publishable --importPath=@proj/${expoLib}`
+    );
+    const versionOutput = runCLI(`release patch`);
+    expect(versionOutput).toContain('Executing pre-version command');
+  });
 });
