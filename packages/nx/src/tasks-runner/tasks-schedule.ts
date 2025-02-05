@@ -10,6 +10,7 @@ import { ProjectGraph } from '../config/project-graph';
 import { findAllProjectNodeDependencies } from '../utils/project-graph-utils';
 import { reverse } from '../project-graph/operators';
 import { TaskHistory, getTaskHistory } from '../utils/task-history';
+import { RunningTasksService } from '../native';
 
 export interface Batch {
   executorName: string;
@@ -33,6 +34,7 @@ export class TasksSchedule {
   constructor(
     private readonly projectGraph: ProjectGraph,
     private readonly taskGraph: TaskGraph,
+    private readonly runningTasksService: RunningTasksService,
     private readonly options: DefaultTasksRunnerOptions
   ) {}
 
@@ -117,6 +119,10 @@ export class TasksSchedule {
       this.notScheduledTaskGraph,
       [taskId]
     );
+    // Tasks is running somewhere else, don't actually schedule it.
+    if (this.runningTasksService.isTaskRunning(taskId)) {
+      return;
+    }
     this.scheduledTasks = this.scheduledTasks
       .concat(taskId)
       // NOTE: sort task by most dependent on first
@@ -255,8 +261,10 @@ export class TasksSchedule {
       (id) => this.completedTasks.has(id)
     );
     const hasContinuousDependenciesStarted =
-      this.taskGraph.continuousDependencies[taskId].every((id) =>
-        this.runningTasks.has(id)
+      this.taskGraph.continuousDependencies[taskId].every(
+        (id) =>
+          this.runningTasks.has(id) ||
+          this.runningTasksService.isTaskRunning(id)
       );
 
     // if dependencies have not completed, cannot schedule
