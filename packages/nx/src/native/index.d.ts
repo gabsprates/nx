@@ -57,7 +57,7 @@ export declare class NxTaskHistory {
 
 export declare class RunningTasksService {
   constructor(db: ExternalObject<NxDbConnection>)
-  isTaskRunning(taskId: string): boolean
+  getRunningTasks(ids: Array<string>): Array<string>
   addRunningTask(taskId: string): void
   removeRunningTask(taskId: string): void
 }

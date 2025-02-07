@@ -425,6 +425,8 @@ export class TaskOrchestrator {
       );
 
       const { code, terminalOutput } = await childProcess.getResults();
+
+      childProcess.kill();
       results.push({
         task,
         status: code === 0 ? 'success' : 'failure',
