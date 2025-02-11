@@ -7,6 +7,7 @@ group = "dev.nx.gradle"
 allprojects {
   apply {
       plugin("project-report")
+      plugin("dev.nx.gradle.native")
   }
 }
 

@@ -24,18 +24,14 @@ import {
   getCurrentNodesReport,
   populateNodes,
 } from './utils/get-nodes-from-gradle-plugin';
-
-export interface GradlePluginOptions {
-  testTargetName?: string;
-  ciTargetName?: string;
-  [taskTargetName: string]: string | undefined | boolean;
-}
-
-function normalizeOptions(options: GradlePluginOptions): GradlePluginOptions {
-  options ??= {};
-  options.testTargetName ??= 'test';
-  return options;
-}
+import {
+  GradlePluginOptions,
+  normalizeOptions,
+} from './utils/gradle-plugin-options';
+import {
+  replaceTargeGroupNameWithOptions,
+  replaceTargetNameWithOptions,
+} from './utils/create-ci-targets';
 
 type GradleTargets = Record<string, Partial<ProjectConfiguration>>;
 
@@ -104,51 +100,10 @@ export const makeCreateNodesForGradleConfigFile =
       return {};
     }
 
-    let targets = {};
-    // rename target name if it is provided
-    Object.entries(project.targets).forEach(([taskName, target]) => {
-      let targetName = options?.[`${taskName}TargetName`] as string;
-      if (taskName.startsWith('ci')) {
-        if (options.ciTargetName) {
-          targetName = taskName.replace('ci', options.ciTargetName);
-          targets[targetName] = target;
-          if (targetName === options.ciTargetName) {
-            target.metadata.nonAtomizedTarget = options.testTargetName;
-            target.dependsOn.forEach((dep) => {
-              if (typeof dep !== 'string' && dep.target.startsWith('ci')) {
-                dep.target = dep.target.replace('ci', options.ciTargetName);
-              }
-            });
-          }
-        }
-      } else if (targetName) {
-        targets[targetName] = target;
-      } else {
-        targets[taskName] = target;
-      }
-    });
-    project.targets = targets;
-
-    // rename target names in target groups if it is provided
-    Object.entries(project.metadata?.targetGroups).forEach(
-      ([groupName, group]) => {
-        let targetGroup = group
-          .map((taskName) => {
-            let targetName = options?.[`${taskName}TargetName`] as string;
-            if (targetName) {
-              return targetName;
-            } else if (options.ciTargetName && taskName.startsWith('ci')) {
-              targetName = taskName.replace('ci', options.ciTargetName);
-              return targetName;
-            } else {
-              return taskName;
-            }
-          })
-          .filter(Boolean);
-        project.metadata.targetGroups[groupName] = targetGroup;
-      }
-    );
-
+    project.targets = replaceTargetNameWithOptions(project.targets, options);
+    if (project.metadata?.targetGroups) {
+      replaceTargeGroupNameWithOptions(project.metadata?.targetGroups, options);
+    }
     project.root = projectRoot;
 
     return {

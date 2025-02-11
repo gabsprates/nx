@@ -20,7 +20,8 @@ fun processTask(
         projectBuildPath: String,
         projectRoot: String,
         workspaceRoot: String,
-        externalNodes: MutableMap<String, ExternalNode>
+        externalNodes: MutableMap<String, ExternalNode>,
+        dependencies: MutableSet<Dependency>
 ): MutableMap<String, Any?> {
     val logger = task.logger
     logger.info("CreateNodes: process $task for $projectRoot")
@@ -43,7 +44,7 @@ fun processTask(
     }
 
     // process dependsOn
-    val dependsOn = getDependsOnForTask(task)
+    val dependsOn = getDependsOnForTask(task, dependencies)
     if (dependsOn?.isEmpty() == false) {
         logger.info("${task}: processed ${dependsOn.size} dependsOn")
         target["dependsOn"] = dependsOn
@@ -76,7 +77,7 @@ const val testCiTargetGroup = "verification"
 fun addTestCiTargets(
         testFiles: FileCollection,
         projectBuildPath: String,
-        target: NxTarget,
+        testTask: Task,
         targets: NxTargets,
         targetGroups: TargetGroups,
         projectRoot: String,
@@ -85,7 +86,7 @@ fun addTestCiTargets(
     if (!targetGroups.contains(testCiTargetGroup)) { // add target group if not exist
         targetGroups[testCiTargetGroup] = mutableListOf()
     }
-    val dependsOn = mutableListOf<Map<String, String>>()
+    val ciDependsOn = mutableListOf<Map<String, String>>()
     val gradlewCommand = getGradlewCommand()
     testFiles.filter { testFile ->
         val fileName = testFile.getName().split(".").first()
@@ -93,7 +94,7 @@ fun addTestCiTargets(
         testFile.startsWith(workspaceRoot) && regex.matches(fileName)
     }.forEach { testFile ->
         val fileName = testFile.getName().split(".").first()
-        val testCiTarget = target.toMutableMap()
+        val testCiTarget = mutableMapOf<String, Any?>()
         testCiTarget["command"] = "$gradlewCommand ${projectBuildPath}:test --tests $fileName"
         val metadata = getMetadata("Runs Gradle test $fileName in CI", projectBuildPath, "test")
         testCiTarget["metadata"] = metadata
@@ -101,10 +102,22 @@ fun addTestCiTargets(
         testCiTarget["parallelism"] = false
         testCiTarget["inputs"] = arrayOf(replaceRootInPath(testFile.path, projectRoot, workspaceRoot))
 
+        val fileCiDependsOn = getDependsOnForTask(testTask, null)
+        if (fileCiDependsOn?.isEmpty() == false) {
+            testTask.logger.info("${testTask}: processed ${fileCiDependsOn.size} dependsOn")
+            testCiTarget["dependsOn"] = fileCiDependsOn
+        }
+
+        val fileCiOutputs = getOutputsForTask(testTask, projectRoot, workspaceRoot)
+        if (fileCiOutputs?.isEmpty() == false) {
+            testTask.logger.info("${testTask}: processed ${fileCiOutputs.size} outputs")
+            testCiTarget["outputs"] = fileCiOutputs
+        }
+
         val targetName = "ci--${fileName}"
         targets[targetName] = testCiTarget
-        targetGroups["verification"]?.add(targetName)
-        dependsOn.add(
+        targetGroups[testCiTargetGroup]?.add(targetName)
+        ciDependsOn.add(
                 mapOf(
                         "target" to targetName,
                         "projects" to "self",
@@ -113,16 +126,27 @@ fun addTestCiTargets(
         )
 
     }
-    if (dependsOn.isNotEmpty()) {
-        val testCiTarget = mutableMapOf<String, Any?>()
-        val metadata = getMetadata("Runs Gradle Tests in CI", projectBuildPath, "test")
-        testCiTarget["executor"] = "nx:noop"
-        testCiTarget["metadata"] = metadata
-        testCiTarget["dependsOn"] = dependsOn
-        testCiTarget["cache"] = true
-        testCiTarget["parallelism"] = false
-        targets["ci"] = testCiTarget
-        targetGroups[testCiTargetGroup]?.add("ci")
+    testTask.logger.info("$testTask ci tasks: $ciDependsOn")
+    if (ciDependsOn.isNotEmpty()) {
+        if (targets["ci"] != null) {
+            if (targets["ci"]?.get("dependsOn") != null) {
+                (targets["ci"]!!["dependsOn"] as MutableList<Any>).addAll(ciDependsOn)
+            } else {
+                targets["ci"]?.set("dependsOn", ciDependsOn)
+            }
+        } else {
+            val testCiTarget = mutableMapOf<String, Any?>()
+            val metadata = getMetadata("Runs Gradle Tests in CI", projectBuildPath, "test")
+            testCiTarget["executor"] = "nx:noop"
+            testCiTarget["metadata"] = metadata
+            testCiTarget["dependsOn"] = ciDependsOn
+            testCiTarget["cache"] = true
+            testCiTarget["parallelism"] = false
+            targets["ci"] = testCiTarget
+            if (targetGroups[testCiTargetGroup]?.contains(("ci")) == false) {
+                targetGroups[testCiTargetGroup]?.add("ci")
+            }
+        }
     }
 }
 
@@ -218,12 +242,22 @@ fun getOutputsForTask(
  * @param task task to process
  * @return list of dependsOn tasks, null if empty or an error occurred
  */
-fun getDependsOnForTask(task: Task): List<String>? {
+fun getDependsOnForTask(task: Task, dependencies: MutableSet<Dependency>?): List<String>? {
     return try {
         val dependsOn = task.taskDependencies.getDependencies(null)
         if (dependsOn.isNotEmpty()) {
             val dependsOnTasksNames = dependsOn.map { depTask ->
                 val depProject = depTask.project
+                val taskProject = task.project
+                if (depProject != taskProject && dependencies != null) {
+                    dependencies.add(
+                            Dependency(
+                                    taskProject.projectDir.path,
+                                    depProject.projectDir.path,
+                                    taskProject.buildFile.path
+                            )
+                    )
+                }
                 "${depProject.name}:${depTask.name}"
             }
             return dependsOnTasksNames

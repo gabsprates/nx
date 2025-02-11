@@ -2,28 +2,30 @@ package dev.nx.gradle.native.utils
 
 import dev.nx.gradle.native.data.*
 import org.gradle.api.Project
+import java.util.*
 
 /**
  * Loops through a project and populate dependencies and nodes for each target
  */
 fun createNodeForProject(project: Project): GradleNodeReport {
     val logger = project.logger
-    logger.info("createNodeForProject: get nodes and dependencies for ${project.name}")
+    logger.info("${Date()} ${project.name} createNodeForProject: get nodes and dependencies")
 
     // Initialize dependencies with an empty Set to prevent null issues
-    val dependencies: Set<Dependency> = try {
-        getDependenciesForProject(project, project.allprojects).toSet()
+    val dependencies: MutableSet<Dependency> = try {
+        getDependenciesForProject(project)
     } catch (e: Exception) {
-        logger.info("createNodeForProject: get dependencies error: ${e.message}")
-        emptySet()
+        logger.info("${Date()} ${project.name} createNodeForProject: get dependencies error: ${e.message}")
+        mutableSetOf()
     }
+    logger.info("${Date()} ${project.name} createNodeForProject: got dependencies")
 
     // Initialize nodes and externalNodes with empty maps to prevent null issues
     var nodes: Map<String, ProjectNode>
     var externalNodes: Map<String, ExternalNode>
 
     try {
-        val gradleTargets: GradleTargets = processTargetsForProject(project)
+        val gradleTargets: GradleTargets = processTargetsForProject(project, dependencies)
         val projectRoot = project.projectDir.path
         val projectNode = ProjectNode(
                 targets = gradleTargets.targets,
@@ -32,7 +34,7 @@ fun createNodeForProject(project: Project): GradleNodeReport {
         )
         nodes = mapOf(projectRoot to projectNode)
         externalNodes = gradleTargets.externalNodes
-        logger.info("CreateNodes: get nodes and external nodes for $projectRoot")
+        logger.info("${Date()} ${project.name} createNodeForProject: get nodes and external nodes for $projectRoot")
     } catch (e: Exception) {
         logger.info("${project.name}: get nodes error: ${e.message}")
         nodes = emptyMap()
@@ -47,9 +49,10 @@ fun createNodeForProject(project: Project): GradleNodeReport {
  */
 fun processTargetsForProject(
         project: Project,
+        dependencies: MutableSet<Dependency>
 ): GradleTargets {
-    val targets = mutableMapOf<String, MutableMap<String, Any?>>()
-    val targetGroups = mutableMapOf<String, MutableList<String>>()
+    val targets: NxTargets = mutableMapOf<String, MutableMap<String, Any?>>()
+    val targetGroups: TargetGroups = mutableMapOf<String, MutableList<String>>()
     val externalNodes = mutableMapOf<String, ExternalNode>()
     val projectRoot = project.projectDir.path
     val workspaceRoot = workspaceRootInner(System.getProperty("user.dir"), System.getProperty("user.dir"))
@@ -62,7 +65,7 @@ fun processTargetsForProject(
 
     val logger = project.logger
 
-    logger.info("${project}: process targets")
+    logger.info("${Date()} ${project}: process targets")
 
     var gradleProject = project.buildTreePath
     if (!gradleProject.endsWith(":")) {
@@ -71,7 +74,7 @@ fun processTargetsForProject(
 
     project.tasks.forEach { task ->
         try {
-            logger.info("Processing $task")
+            logger.info("${Date()} ${project.name}: Processing $task")
             // add task to target groups
             val group: String? = task.group
             if (!group.isNullOrBlank()) {
@@ -82,20 +85,29 @@ fun processTargetsForProject(
                 }
             }
 
-            val target = processTask(task, projectBuildPath, projectRoot, workspaceRoot, externalNodes)
+            val target = processTask(task, projectBuildPath, projectRoot, workspaceRoot, externalNodes, dependencies)
             targets[task.name] = target
 
+
             if (task.name.startsWith("compileTest")) {
-                addTestCiTargets(
-                        task.inputs.sourceFiles,
-                        projectBuildPath,
-                        target,
-                        targets,
-                        targetGroups,
-                        projectRoot,
-                        workspaceRoot
-                )
+                val testTask = project.getTasksByName("test", false)
+                if (testTask.isNotEmpty()) {
+                    addTestCiTargets(
+                            task.inputs.sourceFiles,
+                            projectBuildPath,
+                            testTask.first(),
+                            targets,
+                            targetGroups,
+                            projectRoot,
+                            workspaceRoot
+                    )
+                }
             }
+            // disable test in CI, use test-ci instead
+            if (task.name.equals("test") && System.getenv("CI").equals("true")) {
+                task.enabled = false
+            }
+            logger.info("${Date()} ${project.name}: Processed $task")
         } catch (e: Exception) {
             logger.info("${task}: process task error $e")
             logger.debug("Stack trace:", e)
