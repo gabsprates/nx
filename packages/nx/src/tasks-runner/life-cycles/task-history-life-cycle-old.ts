@@ -54,6 +54,10 @@ export class LegacyTaskHistoryLifeCycle implements LifeCycle {
         );
       }
     }
+    // Do not directly print output when using the TUI
+    if (process.env.JHPOC === 'true') {
+      return;
+    }
     if (flakyTasks.length > 0) {
       output.warn({
         title: `Nx detected ${

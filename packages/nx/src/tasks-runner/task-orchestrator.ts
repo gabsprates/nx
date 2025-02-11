@@ -3,7 +3,10 @@ import { performance } from 'perf_hooks';
 import { relative } from 'path';
 import { writeFileSync } from 'fs';
 import { TaskHasher } from '../hasher/task-hasher';
-import { runCommands } from '../executors/run-commands/run-commands.impl';
+import {
+  runCommands,
+  normalizeOptions,
+} from '../executors/run-commands/run-commands.impl';
 import { ForkedProcessTaskRunner } from './forked-process-task-runner';
 import { Cache, DbCache, getCache } from './cache';
 import { DefaultTasksRunnerOptions } from './default-tasks-runner';
@@ -438,6 +441,8 @@ export class TaskOrchestrator {
     temporaryOutputPath: string,
     pipeOutput: boolean
   ): Promise<RunningTask> {
+    const __isJHPOC__ = process.env.JHPOC === 'true';
+
     const shouldPrefix =
       streamOutput && process.env.NX_PREFIX_OUTPUT === 'true';
     const targetConfiguration = getTargetConfigurationForTask(
@@ -467,27 +472,46 @@ export class TaskOrchestrator {
             ...combinedOptions.env,
           };
         }
-        if (streamOutput) {
+        if (!__isJHPOC__ && streamOutput) {
           const args = getPrintableCommandArgsForTask(task);
           output.logCommand(args.join(' '));
         }
-        const runningTask = await runCommands(
-          {
-            ...combinedOptions,
-            env,
-            usePty:
-              isRunOne &&
-              !this.tasksSchedule.hasTasks() &&
-              this.runningContinuousTasks.size === 0,
-            streamOutput,
-          },
-          {
-            root: workspaceRoot, // only root is needed in runCommands
-          } as any
-        );
+        let runCommandsOptions = {
+          ...combinedOptions,
+          env,
+          usePty:
+            isRunOne &&
+            !this.tasksSchedule.hasTasks() &&
+            this.runningContinuousTasks.size === 0,
+          streamOutput,
+        };
+        if (__isJHPOC__) {
+          // Force stream output to be disabled for TUI
+          runCommandsOptions = normalizeOptions(runCommandsOptions);
+          runCommandsOptions.streamOutput = false;
+        }
+
+        if (
+          __isJHPOC__ &&
+          typeof this.options.lifeCycle.__runCommandsForTask !== 'function'
+        ) {
+          throw new Error('Incorrect lifeCycle applied for JHPOC');
+        }
+
+        const runningTask =
+          // Run the command directly rust if the task has a single command
+          __isJHPOC__ && runCommandsOptions.commands?.length === 1
+            ? await this.options.lifeCycle.__runCommandsForTask(
+                task,
+                runCommandsOptions
+              )
+            : // Currently always run in JS if there are multiple commands defined for a single task
+              await runCommands(runCommandsOptions, {
+                root: workspaceRoot, // only root is needed in runCommands
+              } as any);
 
         runningTask.onExit((code, terminalOutput) => {
-          if (!streamOutput) {
+          if (__isJHPOC__ || !streamOutput) {
             this.options.lifeCycle.printTaskTerminalOutput(
               task,
               code === 0 ? 'success' : 'failure',

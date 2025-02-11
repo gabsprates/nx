@@ -137,6 +137,9 @@ export const defaultTasksRunner: TasksRunner<
 
   await options.lifeCycle.startCommand();
   try {
+    if (typeof options.lifeCycle.__taskGraphReady === 'function') {
+      options.lifeCycle.__taskGraphReady(tasks);
+    }
     return await runAllTasks(tasks, options, context);
   } finally {
     await options.lifeCycle.endCommand();
