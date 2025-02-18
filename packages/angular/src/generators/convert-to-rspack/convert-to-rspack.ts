@@ -12,6 +12,7 @@ import type { ConvertToRspackSchema } from './schema';
 import { ngRspackVersion, nxVersion } from '../../utils/versions';
 import { createConfig, CreateConfigOptions } from './lib/create-config';
 import { getCustomWebpackConfig } from './lib/get-custom-webpack-config';
+import { updateTsconfig } from './lib/update-tsconfig';
 
 export async function convertToRspack(
   tree: Tree,
@@ -24,7 +25,7 @@ export async function convertToRspack(
   const createConfigOptions: Partial<CreateConfigOptions> = {
     root: project.root,
   };
-  const buildAndServeTargetNames: string[] = [];
+  const buildTargetNames: string[] = [];
   let customWebpackConfigPath: string | undefined;
 
   for (const [targetName, target] of Object.entries(project.targets)) {
@@ -56,12 +57,18 @@ export async function convertToRspack(
         customWebpackConfigPath = target.options.customWebpackConfig.path;
       }
       // TODO: Add more options that can be correctly mapped
-      buildAndServeTargetNames.push(targetName);
+      buildTargetNames.push(targetName);
     } else if (
       target.executor === '@angular-devkit/build-angular:dev-server' ||
-      target.executor === '@nx/angular:dev-server'
+      target.executor === '@nx/angular:dev-server' ||
+      target.executor === '@nx/angular:module-federation-dev-server'
     ) {
-      buildAndServeTargetNames.push(targetName);
+      const port = target.options.port ?? 4200;
+      project[targetName] = {
+        options: {
+          port,
+        },
+      };
     }
   }
 
@@ -75,8 +82,9 @@ export async function convertToRspack(
     customWebpackConfigInfo?.normalizedPathToCustomWebpackConfig,
     customWebpackConfigInfo?.isWebpackConfigFunction
   );
+  updateTsconfig(tree, project.root);
 
-  for (const targetName of buildAndServeTargetNames) {
+  for (const targetName of buildTargetNames) {
     delete project.targets[targetName];
   }
 

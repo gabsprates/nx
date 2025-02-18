@@ -22,21 +22,22 @@ export function createConfig(
   existingWebpackConfigPath?: string,
   isExistingWebpackConfigFunction?: boolean
 ) {
-  const configContents = `const { createConfig } = require('@ng-rspack/build');
+  const configContents = `import { resolve } from 'path';
+  import { createConfig }from '@ng-rspack/build';
   ${
     existingWebpackConfigPath
-      ? `const baseWebpackConfig = require('${existingWebpackConfigPath}');
+      ? `import baseWebpackConfig from '${existingWebpackConfigPath}';
       ${
         isExistingWebpackConfigFunction
           ? ''
-          : `const webpackMerge = require('webpack-merge');`
+          : `import webpackMerge from 'webpack-merge';`
       }`
       : ''
   }
   
   ${
-    existingWebpackConfigPath ? 'const baseConfig' : 'module.exports'
-  } = createConfig({
+    existingWebpackConfigPath ? 'const baseConfig = ' : 'export default '
+  }createConfig({
     root: __dirname,
     index: '${normalizeFromProjectRoot(opts.index, opts.root)}',
     browser: '${normalizeFromProjectRoot(opts.browser, opts.root)}',
@@ -50,7 +51,10 @@ export function createConfig(
         ? `ssrEntry: '${normalizeFromProjectRoot(opts.ssrEntry, opts.root)}',`
         : ''
     }
-    tsconfigPath: '${normalizeFromProjectRoot(opts.tsconfigPath, opts.root)}',
+    tsconfigPath: resolve(__dirname, '${normalizeFromProjectRoot(
+      opts.tsconfigPath,
+      opts.root
+    )}'),
     polyfills: ${JSON.stringify(opts.polyfills)},
     assets: ${JSON.stringify(
       opts.assets.map((a) => normalizeFromProjectRoot(a, opts.root))
@@ -74,10 +78,12 @@ export function createConfig(
   ${
     existingWebpackConfigPath
       ? `
-    module.exports = ${
+    export default ${
       isExistingWebpackConfigFunction
-        ? 'baseWebpackConfig(baseConfig)'
-        : 'webpackMerge(baseConfig, baseWebpackConfig)'
+        ? `async function (env, argv) { 
+        const oldConfig = await baseWebpackConfig;
+        return oldConfig(baseConfig[0]);`
+        : 'webpackMerge(baseConfig[0], baseWebpackConfig)'
     }
   `
       : ''
