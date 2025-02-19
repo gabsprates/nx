@@ -1,7 +1,7 @@
 import { readNxJson, Tree } from '@nx/devkit';
 import {
   determineProjectNameAndRootOptions,
-  ensureProjectName,
+  ensureRootProjectName,
 } from '@nx/devkit/src/generators/project-name-and-root-utils';
 import { Schema } from '../schema';
 import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
@@ -22,7 +22,7 @@ export async function normalizeOptions(
   host: Tree,
   options: Schema
 ): Promise<NormalizedSchema> {
-  await ensureProjectName(host, options, 'library');
+  await ensureRootProjectName(options, 'library');
   const {
     projectName,
     names: projectNames,
@@ -50,9 +50,7 @@ export async function normalizeOptions(
     ...options,
     fileName: projectName,
     routePath: `/${projectNames.projectSimpleName}`,
-    name: isUsingTsSolutionConfig
-      ? getImportPath(host, projectName)
-      : projectName,
+    name: isUsingTsSolutionConfig && !options.name ? importPath : projectName,
     projectRoot,
     parsedTags,
     importPath,

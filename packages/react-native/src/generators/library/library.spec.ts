@@ -500,7 +500,6 @@ describe('lib', () => {
           "main",
           "types",
           "exports",
-          "nx",
         ]
       `);
       expect(readJson(appTree, 'my-lib/tsconfig.json')).toMatchInlineSnapshot(`

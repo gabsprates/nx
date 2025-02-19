@@ -354,6 +354,7 @@ describe('NxPlugin Plugin Generator', () => {
         getSchema({
           directory: 'my-plugin',
           unitTestRunner: 'jest',
+          useProjectJson: false,
         })
       );
 
